@@ -1,0 +1,83 @@
+{
+  "source": "南岸旧系统",
+  "exportedAt": "2026-09-21",
+  "records": [
+    {
+      "ringNo": "CHN-2026-001",
+      "owner": "北岸棚",
+      "fatherRing": "CHN-2022-188",
+      "motherRing": "CHN-2023-512",
+      "color": "灰",
+      "loft": "北岸A棚",
+      "vaccines": [{ "date": "2026-05-10", "name": "鸽痘" }],
+      "transfers": [{ "date": "2026-01-10", "from": "育种棚", "to": "北岸棚" }],
+      "races": [{ "date": "2026-07-12", "event": "200公里联赛", "distance": 200, "returnTime": "13:05", "rank": 6 }]
+    },
+    {
+      "ringNo": "CHN-2021-009",
+      "owner": "北岸棚",
+      "fatherRing": "",
+      "motherRing": "",
+      "color": "黑",
+      "loft": "南岸种鸽棚",
+      "vaccines": [{ "date": "2021-06-01", "name": "鸽痘" }],
+      "transfers": [],
+      "races": []
+    },
+    {
+      "ringNo": "CHN-2025-777",
+      "owner": "北岸棚",
+      "fatherRing": "",
+      "motherRing": "",
+      "color": "灰",
+      "loft": "北岸B棚",
+      "vaccines": [{ "date": "2025-06-01", "name": "鸽痘" }],
+      "transfers": [],
+      "races": [{ "date": "2025-10-18", "event": "300公里大奖赛", "distance": 300, "returnTime": "15:48", "rank": 12 }]
+    },
+    {
+      "ringNo": "CHN-2025-778",
+      "owner": "北岸棚",
+      "fatherRing": "CHN-2022-188",
+      "motherRing": "CHN-2023-512",
+      "color": "雨点",
+      "loft": "北岸B棚",
+      "vaccines": [],
+      "transfers": [],
+      "races": []
+    },
+    {
+      "ringNo": "CHN-2025-330",
+      "owner": "南岸棚",
+      "fatherRing": "",
+      "motherRing": "",
+      "color": "雨点",
+      "loft": "南岸B棚",
+      "vaccines": [],
+      "transfers": [{ "date": "2025-09-01", "from": "北岸棚", "to": "南岸棚" }],
+      "races": []
+    },
+    {
+      "ringNo": "CHN-2025-332",
+      "owner": "北岸棚",
+      "fatherRing": "CHN-2025-331",
+      "motherRing": "",
+      "color": "灰白条",
+      "loft": "北岸A棚",
+      "vaccines": [],
+      "transfers": [],
+      "races": []
+    },
+    {
+      "ringNo": "CHN-2025-410",
+      "owner": "南岸棚",
+      "fatherRing": "CHN-2022-188",
+      "motherRing": "CHN-2023-512",
+      "color": "红轮",
+      "loft": "南岸B棚",
+      "vaccines": [{ "date": "2025-04-11", "name": "新城疫" }],
+      "transfers": [],
+      "races": [{ "date": "2025-11-02", "event": "260公里邀请赛", "distance": 260, "returnTime": "14:20", "rank": 3 }]
+    }
+  ]
+}

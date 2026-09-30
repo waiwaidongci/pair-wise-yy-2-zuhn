@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>正式血统档案 · 赛鸽血统环号登记站</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header>
+    <div><h1>赛鸽血统环号登记站</h1><div class="meta">并册后同一足环仅保留一份正式血统档案</div></div>
+    <nav>
+      <a href="/" class="active">正式档案</a>
+      <a href="/migration">迁移并册</a>
+      <a href="/credentials">参赛凭据</a>
+    </nav>
+  </header>
+  <main class="cols">
+    <div>
+      <form class="panel" id="form">
+        <h2>创建鸽只档案</h2>
+        <label>足环号</label><input name="ringNo" required>
+        <label>鸽主</label><input name="owner" required>
+        <label>父鸽足环号</label><input name="fatherRing">
+        <label>母鸽足环号</label><input name="motherRing">
+        <label>羽色</label><input name="color" required>
+        <label>出生棚号</label><input name="loft" required>
+        <div class="section"><button>保存档案</button></div>
+        <div class="flash" id="formFlash"></div>
+      </form>
+    </div>
+    <section>
+      <div class="toolbar"><input id="search" placeholder="输入足环号查询血统（含换环前旧环号）"><button id="searchBtn">查询</button></div>
+      <div class="panel" id="detail"><div class="muted-box">请输入足环号查看父母、子代、疫苗、转让和成绩。</div></div>
+      <h2 class="section">全部正式档案（<span id="count">0</span>）</h2>
+      <div class="grid" id="cards"></div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -18,3 +18,9 @@ coverage/
 .DS_Store
 .idea/
 .vscode/
+
+# 运行期生成（并册产物）；pigeons.json 与 legacy/ 为初始输入，需保留
+/data/archives.json
+/data/migration.json
+/data/credentials.json
+/data/*.tmp

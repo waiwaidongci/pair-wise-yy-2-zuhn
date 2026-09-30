@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>迁移并册 · 赛鸽血统环号登记站</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header>
+    <div><h1>旧数据迁移与并册</h1><div class="meta">检查点续跑 · 冲突先列后裁 · 不覆盖已确认记录 · 换环归一份</div></div>
+    <nav>
+      <a href="/">正式档案</a>
+      <a href="/migration" class="active">迁移并册</a>
+      <a href="/credentials">参赛凭据</a>
+    </nav>
+  </header>
+  <main class="list">
+    <section class="panel">
+      <h2>迁移任务</h2>
+      <div class="row">
+        <label style="margin:0; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="injectFault" style="width:auto" checked> 演练：处理到 CHN-2025-331 时注入一次瞬时故障（验证检查点重试）</label>
+      </div>
+      <div class="row section">
+        <button id="startBtn">启动迁移（北岸+南岸旧系统）</button>
+        <button id="retryBtn" class="ghost" disabled>从检查点重试</button>
+        <button id="refreshBtn" class="ghost">刷新状态</button>
+      </div>
+      <div id="runStatus"></div>
+    </section>
+
+    <section class="panel">
+      <h2>冲突清单（先列冲突，不自动覆盖）</h2>
+      <div id="conflicts"></div>
+    </section>
+
+    <section class="panel">
+      <h2>换环别名归组</h2>
+      <div id="aliases" class="meta">启动迁移后显示。</div>
+    </section>
+  </main>
+  <script src="/migration-page.js"></script>
+</body>
+</html>
