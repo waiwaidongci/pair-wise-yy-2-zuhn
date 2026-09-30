@@ -1,29 +1,28 @@
+// 页面入口 / HTTP 路由层：只负责收发请求，调用 store（档案存储）、migrate（迁移规则）、credentials（凭据）。
 import http from "node:http";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+
+import { createStore } from "./src/store.js";
+import { analyzeMigration, applyMigration, hasUnresolved, countUnresolved } from "./src/migrate.js";
+import { issueCredential, invalidateForPigeon, recalculateCredential, getCredential } from "./src/credentials.js";
+import { renderPage } from "./src/page.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const dbPath = join(__dirname, "data", "pigeons.json");
+const dataDir = join(__dirname, "data");
 const port = Number(process.env.PORT || 3024);
 
 const seed = {
   pigeons: [
-    { ringNo: "CHN-2026-001", owner: "北岸棚", fatherRing: "CHN-2022-188", motherRing: "CHN-2023-512", color: "灰", loft: "北岸A棚", vaccines: [{ date: "2026-04-01", name: "新城疫" }], transfers: [{ date: "2026-04-15", from: "育种棚", to: "北岸棚" }], races: [{ date: "2026-06-01", event: "120公里训放", distance: 120, returnTime: "10:42", rank: 18 }] },
-    { ringNo: "CHN-2022-188", owner: "育种棚", fatherRing: "", motherRing: "", color: "雨点", loft: "种鸽棚", vaccines: [], transfers: [], races: [] },
-    { ringNo: "CHN-2023-512", owner: "育种棚", fatherRing: "", motherRing: "", color: "红轮", loft: "种鸽棚", vaccines: [], transfers: [], races: [] }
-  ]
+    { ringNo: "CHN-2026-001", owner: "北岸棚", fatherRing: "CHN-2022-188", motherRing: "CHN-2023-512", color: "灰", loft: "北岸A棚", confirmed: true, ringHistory: [], vaccines: [{ date: "2026-04-01", name: "新城疫" }], transfers: [{ date: "2026-04-15", from: "育种棚", to: "北岸棚" }], races: [{ date: "2026-06-01", event: "120公里训放", distance: 120, returnTime: "10:42", rank: 18 }] },
+    { ringNo: "CHN-2022-188", owner: "育种棚", fatherRing: "", motherRing: "", color: "雨点", loft: "种鸽棚", confirmed: true, ringHistory: [], vaccines: [], transfers: [], races: [] },
+    { ringNo: "CHN-2023-512", owner: "育种棚", fatherRing: "", motherRing: "", color: "红轮", loft: "种鸽棚", confirmed: true, ringHistory: [], vaccines: [], transfers: [], races: [] },
+  ],
 };
 
-async function loadDb() {
-  if (!existsSync(dbPath)) {
-    await mkdir(dirname(dbPath), { recursive: true });
-    await writeFile(dbPath, JSON.stringify(seed, null, 2));
-  }
-  return JSON.parse(await readFile(dbPath, "utf8"));
-}
-async function saveDb(db) { await writeFile(dbPath, JSON.stringify(db, null, 2)); }
+const store = createStore({ dataDir, seed });
+
 async function body(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -42,111 +41,116 @@ function relation(db, ringNo) {
   return { pigeon, father, mother, children };
 }
 
-const page = `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>赛鸽血统环号登记站</title>
-  <style>
-    :root { --bg:#eff2f5; --panel:#fff; --ink:#1f2833; --muted:#697786; --line:#d3dce4; --accent:#315f83; --red:#9b3f35; }
-    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--ink); font-family:Arial,"PingFang SC",sans-serif; }
-    header { padding:22px 28px; background:#fff; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:16px; align-items:center; }
-    h1 { margin:0; font-size:26px; } main { display:grid; grid-template-columns:380px 1fr; gap:22px; padding:22px 28px; }
-    form,.panel,.card,.stat { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; } h2 { margin:0 0 12px; font-size:18px; }
-    label { display:block; margin:10px 0 5px; color:var(--muted); font-size:13px; } input,select { width:100%; border:1px solid var(--line); border-radius:6px; padding:9px; font:inherit; }
-    button { border:0; border-radius:6px; background:var(--accent); color:#fff; padding:10px 13px; font-weight:700; cursor:pointer; }
-    .toolbar { display:grid; grid-template-columns:1fr auto; gap:10px; margin-bottom:14px; } .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
-    .card { display:grid; gap:8px; } .meta { color:var(--muted); font-size:13px; } .pill { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:3px 8px; font-size:12px; }
-    .section { margin-top:14px; } .relation { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; } .small { background:#f8fafb; border:1px solid var(--line); border-radius:8px; padding:10px; }
-    @media (max-width:900px){ header{display:block;padding:18px 16px;} main{grid-template-columns:1fr;padding:16px;} .relation{grid-template-columns:1fr;} }
-  </style>
-</head>
-<body>
-  <header><div><h1>赛鸽血统环号登记站</h1><div class="meta">档案、血统、转让和归巢成绩</div></div><button id="reload">刷新</button></header>
-  <main>
-    <form id="form">
-      <h2>创建鸽只档案</h2>
-      <label>足环号</label><input name="ringNo" required>
-      <label>鸽主</label><input name="owner" required>
-      <label>父鸽足环号</label><input name="fatherRing">
-      <label>母鸽足环号</label><input name="motherRing">
-      <label>羽色</label><input name="color" required>
-      <label>出生棚号</label><input name="loft" required>
-      <button>保存档案</button>
-    </form>
-    <section>
-      <div class="toolbar"><input id="search" placeholder="输入足环号查询血统"><button id="searchBtn">查询</button></div>
-      <div class="panel" id="detail"></div>
-      <div class="section grid" id="cards"></div>
-    </section>
-  </main>
-  <script>
-    const form = document.querySelector("#form");
-    const cards = document.querySelector("#cards");
-    const detail = document.querySelector("#detail");
-    const search = document.querySelector("#search");
-    let pigeons = [];
-    async function api(path, options) {
-      const res = await fetch(path, options && options.body ? { ...options, headers:{ "Content-Type":"application/json" } } : options);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "请求失败");
-      return data;
+// 血统或成绩变动后，失效该鸽只及其子代的已发凭据。
+async function touchPigeon(ringNo) {
+  const [db, credState] = await Promise.all([store.loadPigeons(), store.loadCredentials()]);
+  invalidateForPigeon(credState, db, ringNo);
+  await store.saveCredentials(credState);
+}
+
+// ---- 迁移检查点状态机 ----
+// submitted → analyzed → resolved → applied
+// 每完成一个阶段立即落盘；失败后从最后检查点重试，已应用环号跳过，保证幂等。
+async function runMigration(id) {
+  const state = await store.loadMigrations();
+  const migration = state.migrations.find(m => m.id === id);
+  if (!migration) { const e = new Error("migration_not_found"); e.code = 404; throw e; }
+
+  try {
+    if (migration.checkpoint === "submitted") {
+      const db = await store.loadPigeons();
+      migration.plan = analyzeMigration(migration.source?.pigeons || [], db.pigeons);
+      migration.checkpoint = "analyzed";
+      migration.status = countUnresolved(migration.plan) ? "conflicted" : "ready";
+      migration.updatedAt = new Date().toISOString();
+      await store.saveMigrations(state);
     }
-    function renderCards() {
-      cards.innerHTML = pigeons.map(p => '<article class="card"><h3>'+p.ringNo+'</h3><span class="pill">'+p.owner+'</span><div class="meta">'+p.color+' · '+p.loft+'</div><div>父：'+(p.fatherRing || "未登记")+'</div><div>母：'+(p.motherRing || "未登记")+'</div><label>录入转让</label><input data-to="'+p.ringNo+'" placeholder="新归属人"><button data-transfer="'+p.ringNo+'">保存转让</button><label>归巢成绩</label><input data-race="'+p.ringNo+'" placeholder="赛事/距离/名次，如200公里/200/6"><button data-score="'+p.ringNo+'">保存成绩</button></article>').join("");
-      document.querySelectorAll("[data-transfer]").forEach(btn => btn.onclick = async () => {
-        const ringNo = btn.dataset.transfer; const to = document.querySelector('[data-to="'+ringNo+'"]').value;
-        await api('/api/pigeons/'+encodeURIComponent(ringNo)+'/transfers', { method:'POST', body: JSON.stringify({ to }) }); await load();
-      });
-      document.querySelectorAll("[data-score]").forEach(btn => btn.onclick = async () => {
-        const ringNo = btn.dataset.score; const raw = document.querySelector('[data-race="'+ringNo+'"]').value.split("/");
-        await api('/api/pigeons/'+encodeURIComponent(ringNo)+'/races', { method:'POST', body: JSON.stringify({ event: raw[0] || "未命名赛事", distance: Number(raw[1] || 0), rank: Number(raw[2] || 0) }) }); await load();
-      });
+    if (migration.checkpoint === "analyzed") {
+      if (hasUnresolved(migration.plan)) {
+        migration.status = "conflicted";
+        migration.updatedAt = new Date().toISOString();
+        await store.saveMigrations(state);
+        return migration;
+      }
+      migration.checkpoint = "resolved";
+      migration.updatedAt = new Date().toISOString();
+      await store.saveMigrations(state);
     }
-    function renderRelation(data) {
-      if (!data) { detail.innerHTML = '<h2>血统查询</h2><p class="meta">请输入足环号查看父母、子代、转让和成绩。</p>'; return; }
-      const p = data.pigeon;
-      detail.innerHTML = '<h2>'+p.ringNo+' 血统档案</h2><div class="relation"><div class="small"><b>父鸽</b><br>'+(data.father?.ringNo || p.fatherRing || "未登记")+'</div><div class="small"><b>本鸽</b><br>'+p.owner+' · '+p.color+'</div><div class="small"><b>母鸽</b><br>'+(data.mother?.ringNo || p.motherRing || "未登记")+'</div></div><div><b>子代</b> '+(data.children.map(c => c.ringNo).join("、") || "暂无")+'</div><div class="meta">转让：'+(p.transfers.map(t => t.from+"→"+t.to).join(" / ") || "暂无")+'</div><div class="meta">归巢：'+(p.races.map(r => r.event+" 第"+r.rank+"名").join(" / ") || "暂无")+'</div>';
+    if (migration.checkpoint === "resolved") {
+      migration.status = "applying";
+      migration.updatedAt = new Date().toISOString();
+      await store.saveMigrations(state);
+
+      const db = await store.loadPigeons();
+      const { pigeons, result, applied } = applyMigration(migration.plan, db.pigeons, migration.applied);
+      await store.savePigeons({ pigeons });
+
+      migration.applied = applied;
+      migration.result = result;
+      migration.checkpoint = "applied";
+      migration.status = "completed";
+      migration.error = null;
+      migration.updatedAt = new Date().toISOString();
+      await store.saveMigrations(state);
+
+      // 并册后血统/成绩变动：失效受影响鸽只的已发凭据。
+      const credState = await store.loadCredentials();
+      for (const ringNo of [...result.added, ...result.updated.map(u => u.split("（")[0])]) {
+        invalidateForPigeon(credState, { pigeons }, ringNo);
+      }
+      await store.saveCredentials(credState);
+      return migration;
     }
-    async function load(){ pigeons = await api("/api/pigeons"); renderCards(); renderRelation(null); }
-    document.querySelector("#searchBtn").onclick = async () => renderRelation(await api('/api/pigeons/'+encodeURIComponent(search.value)+'/relation'));
-    document.querySelector("#reload").onclick = load;
-    form.onsubmit = async event => {
-      event.preventDefault();
-      await api("/api/pigeons", { method:"POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
-      form.reset(); await load();
-    };
-    load();
-  </script>
-</body>
-</html>`;
+    if (migration.checkpoint === "applied") {
+      migration.status = "completed";
+      migration.updatedAt = new Date().toISOString();
+      await store.saveMigrations(state);
+    }
+    return migration;
+  } catch (error) {
+    migration.status = "failed";
+    migration.error = error.message;
+    migration.updatedAt = new Date().toISOString();
+    await store.saveMigrations(state);
+    throw error;
+  }
+}
 
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    const db = await loadDb();
-    if (req.method === "GET" && url.pathname === "/") {
-      res.writeHead(200, { "Content-Type":"text/html; charset=utf-8" });
-      return res.end(page);
+    const path = url.pathname;
+
+    if (req.method === "GET" && path === "/") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      return res.end(renderPage());
     }
-    if (req.method === "GET" && url.pathname === "/api/pigeons") return sendJson(res, 200, db.pigeons);
-    if (req.method === "POST" && url.pathname === "/api/pigeons") {
+
+    // ---- 鸽只档案 ----
+    if (req.method === "GET" && path === "/api/pigeons") {
+      const db = await store.loadPigeons();
+      return sendJson(res, 200, db.pigeons);
+    }
+    if (req.method === "POST" && path === "/api/pigeons") {
       const input = await body(req);
+      const db = await store.loadPigeons();
       if (db.pigeons.some(item => item.ringNo === input.ringNo)) return sendJson(res, 409, { error: "ring_exists" });
-      const pigeon = { ...input, vaccines: [], transfers: [], races: [] };
+      const pigeon = { ...input, confirmed: true, ringHistory: input.ringHistory || [], vaccines: [], transfers: [], races: [] };
       db.pigeons.unshift(pigeon);
-      await saveDb(db);
+      await store.savePigeons(db);
       return sendJson(res, 201, pigeon);
     }
-    const relationMatch = url.pathname.match(/^\/api\/pigeons\/(.+)\/relation$/);
+    const relationMatch = path.match(/^\/api\/pigeons\/(.+)\/relation$/);
     if (relationMatch && req.method === "GET") {
+      const db = await store.loadPigeons();
       const data = relation(db, decodeURIComponent(relationMatch[1]));
       return data ? sendJson(res, 200, data) : sendJson(res, 404, { error: "pigeon_not_found" });
     }
-    const actionMatch = url.pathname.match(/^\/api\/pigeons\/(.+)\/(transfers|races|vaccines)$/);
+    const actionMatch = path.match(/^\/api\/pigeons\/(.+)\/(transfers|races|vaccines)$/);
     if (actionMatch && req.method === "POST") {
-      const pigeon = db.pigeons.find(item => item.ringNo === decodeURIComponent(actionMatch[1]));
+      const db = await store.loadPigeons();
+      const ringNo = decodeURIComponent(actionMatch[1]);
+      const pigeon = db.pigeons.find(item => item.ringNo === ringNo);
       if (!pigeon) return sendJson(res, 404, { error: "pigeon_not_found" });
       const input = await body(req);
       if (actionMatch[2] === "transfers") {
@@ -154,15 +158,137 @@ const server = http.createServer(async (req, res) => {
         pigeon.owner = input.to;
         pigeon.transfers.push(transfer);
       }
-      if (actionMatch[2] === "races") pigeon.races.push({ date: input.date || new Date().toISOString().slice(0, 10), event: input.event, distance: Number(input.distance || 0), returnTime: input.returnTime || "", rank: Number(input.rank || 0) });
-      if (actionMatch[2] === "vaccines") pigeon.vaccines.push({ date: input.date || new Date().toISOString().slice(0, 10), name: input.name });
-      await saveDb(db);
+      if (actionMatch[2] === "races") {
+        pigeon.races.push({ date: input.date || new Date().toISOString().slice(0, 10), event: input.event, distance: Number(input.distance || 0), returnTime: input.returnTime || "", rank: Number(input.rank || 0) });
+      }
+      if (actionMatch[2] === "vaccines") {
+        pigeon.vaccines.push({ date: input.date || new Date().toISOString().slice(0, 10), name: input.name });
+      }
+      await store.savePigeons(db);
+      await touchPigeon(ringNo);
       return sendJson(res, 200, pigeon);
     }
+
+    // ---- 参赛凭据 ----
+    const credIssueMatch = path.match(/^\/api\/pigeons\/(.+)\/credentials$/);
+    if (credIssueMatch && req.method === "POST") {
+      const db = await store.loadPigeons();
+      const credState = await store.loadCredentials();
+      const credential = issueCredential(db, credState, decodeURIComponent(credIssueMatch[1]));
+      if (!credential) return sendJson(res, 404, { error: "pigeon_not_found" });
+      await store.saveCredentials(credState);
+      return sendJson(res, 201, credential);
+    }
+    if (req.method === "GET" && path === "/api/credentials") {
+      const credState = await store.loadCredentials();
+      return sendJson(res, 200, credState.credentials);
+    }
+    const credGetMatch = path.match(/^\/api\/credentials\/(.+)$/);
+    if (credGetMatch && req.method === "GET") {
+      const db = await store.loadPigeons();
+      const credState = await store.loadCredentials();
+      const credential = getCredential(db, credState, decodeURIComponent(credGetMatch[1]));
+      if (!credential) return sendJson(res, 404, { error: "credential_not_found" });
+      await store.saveCredentials(credState);
+      return sendJson(res, 200, credential);
+    }
+    const credRecalcMatch = path.match(/^\/api\/credentials\/(.+)\/recalculate$/);
+    if (credRecalcMatch && req.method === "POST") {
+      const db = await store.loadPigeons();
+      const credState = await store.loadCredentials();
+      const credential = recalculateCredential(db, credState, decodeURIComponent(credRecalcMatch[1]));
+      if (!credential) return sendJson(res, 404, { error: "credential_not_found" });
+      await store.saveCredentials(credState);
+      return sendJson(res, 200, credential);
+    }
+
+    // ---- 并册迁移 ----
+    if (req.method === "POST" && path === "/api/migrations") {
+      const source = await body(req);
+      const state = await store.loadMigrations();
+      const id = "mig-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+      const migration = {
+        id,
+        status: "analyzing",
+        checkpoint: "submitted",
+        source,
+        plan: null,
+        result: null,
+        applied: { ringNos: [] },
+        error: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      state.migrations.unshift(migration);
+      await store.saveMigrations(state);
+      try {
+        await runMigration(id);
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message, migration: (await store.loadMigrations()).migrations.find(m => m.id === id) });
+      }
+      const fresh = (await store.loadMigrations()).migrations.find(m => m.id === id);
+      return sendJson(res, 201, fresh);
+    }
+    if (req.method === "GET" && path === "/api/migrations") {
+      const state = await store.loadMigrations();
+      return sendJson(res, 200, state.migrations);
+    }
+    const migGetMatch = path.match(/^\/api\/migrations\/([^/]+)$/);
+    if (migGetMatch && req.method === "GET") {
+      const state = await store.loadMigrations();
+      const migration = state.migrations.find(m => m.id === decodeURIComponent(migGetMatch[1]));
+      return migration ? sendJson(res, 200, migration) : sendJson(res, 404, { error: "migration_not_found" });
+    }
+    const migRetryMatch = path.match(/^\/api\/migrations\/([^/]+)\/retry$/);
+    if (migRetryMatch && req.method === "POST") {
+      const id = decodeURIComponent(migRetryMatch[1]);
+      try {
+        const migration = await runMigration(id);
+        return sendJson(res, 200, migration);
+      } catch (e) {
+        const state = await store.loadMigrations();
+        const migration = state.migrations.find(m => m.id === id);
+        return sendJson(res, 500, { error: e.message, migration });
+      }
+    }
+    const migConflictMatch = path.match(/^\/api\/migrations\/([^/]+)\/conflicts\/(\d+)\/([^/]+)\/resolve$/);
+    if (migConflictMatch && req.method === "POST") {
+      const state = await store.loadMigrations();
+      const migration = state.migrations.find(m => m.id === decodeURIComponent(migConflictMatch[1]));
+      if (!migration) return sendJson(res, 404, { error: "migration_not_found" });
+      const updateIndex = Number(migConflictMatch[2]);
+      const field = decodeURIComponent(migConflictMatch[3]);
+      const input = await body(req);
+      const upd = migration.plan?.updates?.[updateIndex];
+      if (!upd) return sendJson(res, 404, { error: "update_not_found" });
+      const conflict = upd.conflicts.find(c => c.field === field);
+      if (!conflict) return sendJson(res, 404, { error: "conflict_not_found" });
+      conflict.resolution = input.choice === "source" ? "source" : "target";
+      migration.checkpoint = "analyzed"; // 回到分析检查点，重试时重新校验
+      migration.updatedAt = new Date().toISOString();
+      await store.saveMigrations(state);
+      return sendJson(res, 200, migration);
+    }
+    const migCycleMatch = path.match(/^\/api\/migrations\/([^/]+)\/cycles\/(\d+)\/resolve$/);
+    if (migCycleMatch && req.method === "POST") {
+      const state = await store.loadMigrations();
+      const migration = state.migrations.find(m => m.id === decodeURIComponent(migCycleMatch[1]));
+      if (!migration) return sendJson(res, 404, { error: "migration_not_found" });
+      const cycleIndex = Number(migCycleMatch[2]);
+      const input = await body(req);
+      const cycle = migration.plan?.cycles?.[cycleIndex];
+      if (!cycle) return sendJson(res, 404, { error: "cycle_not_found" });
+      cycle.resolution = input.choice === "skip" ? "skip" : "break";
+      migration.checkpoint = "analyzed";
+      migration.updatedAt = new Date().toISOString();
+      await store.saveMigrations(state);
+      return sendJson(res, 200, migration);
+    }
+
     sendJson(res, 404, { error: "not_found" });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
   }
 });
 
-server.listen(port, () => console.log(`Racing pigeon registry app listening on http://localhost:${port}`));
+server.listen(port, () => console.log(`赛鸽并册迁移系统 listening on http://localhost:${port}`));
